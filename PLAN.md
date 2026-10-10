@@ -84,4 +84,7 @@ Debugging: logs are in CloudWatch `/ecs/openbao-poc`
       longer needed). Failover on 2.7.1: 94 reads, 1 failed
 - [ ] Cost Explorer: `claude-deployer` gets AccessDenied ("User not enabled for cost explorer
       access"); enable IAM access to billing in the account settings to check spend from here
-- [ ] `scripts/down.sh`; `scripts/status.sh` shows nothing billed hourly
+- [x] `scripts/down.sh`; `scripts/status.sh` shows nothing billed hourly (2026-10-10: ECS service,
+      ALB and DNS record removed; Aurora paused at 0 ACU)
+- [x] Architecture + production recommendation documented: `docs/ARCHITECTURE.md`
+      (also shared as a Claude Doc)
