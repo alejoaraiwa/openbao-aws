@@ -70,7 +70,7 @@ Debugging: logs are in CloudWatch `/ecs/openbao-poc`
 - [x] Terraform + scripts written; `terraform validate` passes
 - [x] User: AWS account + `claude-deployer` access key
 - [x] Credentials verified in a session (2026-10-10: AWS keys are real env vars, STS ok as `claude-deployer`; Cloudflare token sees zone `ubts.es`)
-- [ ] Budget alert email set
+- [x] Budget alert email set (2026-10-10: `openbao-poc-monthly`, $10/month, alerts to the address in `terraform/poc.auto.tfvars`)
 - [x] `scripts/bootstrap.sh` (state bucket created, `terraform init` ok)
 - [x] `scripts/up.sh`; `https://bao.ubts.es` answers; 3 nodes healthy (2026-10-10, after pinning
       OpenBao to 2.6.4: in 2.7.x the awskms seal is an external plugin, so 2.7.1 crash-looped
