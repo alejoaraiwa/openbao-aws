@@ -69,9 +69,9 @@ Debugging: logs are in CloudWatch `/ecs/openbao-poc`
 - [x] Design agreed (3 nodes, minimum cost, on/off switch)
 - [x] Terraform + scripts written; `terraform validate` passes
 - [x] User: AWS account + `claude-deployer` access key
-- [ ] Credentials verified in a session (first attempt: AWS keys were Network secrets, Cloudflare token missing)
+- [x] Credentials verified in a session (2026-10-10: AWS keys are real env vars, STS ok as `claude-deployer`; Cloudflare token sees zone `ubts.es`)
 - [ ] Budget alert email set
-- [ ] `scripts/bootstrap.sh`
+- [x] `scripts/bootstrap.sh` (state bucket created, `terraform init` ok)
 - [ ] `scripts/up.sh`; `https://bao.ubts.es` answers; 3 nodes healthy
 - [ ] `scripts/failover-test.sh` passes
 - [ ] `scripts/down.sh`; `scripts/status.sh` shows nothing billed hourly
