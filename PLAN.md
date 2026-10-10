@@ -72,6 +72,9 @@ Debugging: logs are in CloudWatch `/ecs/openbao-poc`
 - [x] Credentials verified in a session (2026-10-10: AWS keys are real env vars, STS ok as `claude-deployer`; Cloudflare token sees zone `ubts.es`)
 - [ ] Budget alert email set
 - [x] `scripts/bootstrap.sh` (state bucket created, `terraform init` ok)
-- [ ] `scripts/up.sh`; `https://bao.ubts.es` answers; 3 nodes healthy
-- [ ] `scripts/failover-test.sh` passes
+- [x] `scripts/up.sh`; `https://bao.ubts.es` answers; 3 nodes healthy (2026-10-10, after pinning
+      OpenBao to 2.6.4: in 2.7.x the awskms seal is an external plugin, so 2.7.1 crash-looped
+      with "unknown wrapper: awskms". Moving to the plugin is a possible follow-up)
+- [x] `scripts/failover-test.sh` passes (2026-10-10: active node stopped, standby took over,
+      91 reads through the ALB during the 90s test, 0 failed; ECS back to 3 tasks within 30s)
 - [ ] `scripts/down.sh`; `scripts/status.sh` shows nothing billed hourly
