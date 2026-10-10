@@ -28,7 +28,8 @@ log "Active node: $OLD_IP (${TASK##*/})"
 LOG="$(mktemp)"
 ( end=$((SECONDS + 90))
   while [ $SECONDS -lt $end ]; do
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "${H[@]}" "$URL/v1/secret/data/failover-test")"
+    # `|| true`: a failed request (curl prints 000) must not end the probe under set -e.
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "${H[@]}" "$URL/v1/secret/data/failover-test" || true)"
     echo "$(date +%s.%N) $code" >> "$LOG"
     sleep 0.5
   done ) &
@@ -41,7 +42,8 @@ aws ecs stop-task --cluster "$CLUSTER" --task "$TASK" --reason "failover test" >
 NEW_IP="$OLD_IP"
 for _ in $(seq 1 120); do
   NEW_IP="$(leader_ip 2>/dev/null || echo "$OLD_IP")"
-  [ -n "$NEW_IP" ] && [ "$NEW_IP" != "$OLD_IP" ] && break
+  # During the election there is no leader yet (leader_address is empty/null).
+  [[ "$NEW_IP" =~ ^[0-9.]+$ ]] && [ "$NEW_IP" != "$OLD_IP" ] && break
   sleep 0.5
 done
 log "New active node: $NEW_IP"

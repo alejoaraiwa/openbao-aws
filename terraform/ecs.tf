@@ -101,6 +101,7 @@ resource "aws_ecs_task_definition" "bao" {
     environment = [
       { name = "AWS_REGION", value = var.region },
       { name = "KMS_KEY_ID", value = aws_kms_key.unseal.key_id },
+      { name = "KMS_PLUGIN_IMAGE", value = var.kms_plugin_image },
       { name = "PG_HOST", value = aws_rds_cluster.this.endpoint },
       { name = "PG_USER", value = aws_rds_cluster.this.master_username },
       { name = "PG_DB", value = aws_rds_cluster.this.database_name },
