@@ -1,4 +1,6 @@
 resource "aws_budgets_budget" "monthly" {
+  count = var.alert_email == "" ? 0 : 1
+
   name         = "${var.name}-monthly"
   budget_type  = "COST"
   limit_amount = tostring(var.budget_limit_usd)

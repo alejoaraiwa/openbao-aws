@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Initializes OpenBao once the cluster is up, stores the recovery keys and root
-# token in AWS Secrets Manager ($INIT_SECRET), and checks every node is healthy.
+# token in SSM Parameter Store ($INIT_PARAM, SecureString), and checks every
+# node is healthy.
 source "$(dirname "$0")/lib.sh"
 
 URL="$(tf_out url)"
@@ -21,11 +22,11 @@ else
   umask 077
   OUT="$REPO_ROOT/.init-output.json"   # gitignored; removed once stored in AWS
   curl -fsS -X PUT -d '{"recovery_shares":3,"recovery_threshold":2}' "$URL/v1/sys/init" > "$OUT"
-  aws secretsmanager create-secret --name "$INIT_SECRET" \
+  aws ssm put-parameter --name "$INIT_PARAM" --type SecureString --overwrite \
     --description "OpenBao POC recovery keys and root token" \
-    --secret-string "file://$OUT" >/dev/null
+    --value "file://$OUT" >/dev/null
   rm -f "$OUT"
-  log "Recovery keys + root token stored in Secrets Manager: $INIT_SECRET"
+  log "Recovery keys + root token stored in SSM Parameter Store: $INIT_PARAM"
 fi
 
 log "Waiting for all targets to be healthy and unsealed"

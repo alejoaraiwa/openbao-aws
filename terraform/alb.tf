@@ -36,7 +36,11 @@ resource "aws_acm_certificate_validation" "this" {
   validation_record_fqdns = [for r in cloudflare_dns_record.acm_validation : r.name]
 }
 
+# Everything below exists only while var.running is true: an idle ALB and its
+# public IPs are the main standing cost.
 resource "aws_lb" "this" {
+  count = var.running ? 1 : 0
+
   name               = var.name
   load_balancer_type = "application"
   internal           = false
@@ -45,6 +49,8 @@ resource "aws_lb" "this" {
 }
 
 resource "aws_lb_target_group" "bao" {
+  count = var.running ? 1 : 0
+
   name                 = var.name
   port                 = 8200
   protocol             = "HTTP"
@@ -65,7 +71,9 @@ resource "aws_lb_target_group" "bao" {
 }
 
 resource "aws_lb_listener" "https" {
-  load_balancer_arn = aws_lb.this.arn
+  count = var.running ? 1 : 0
+
+  load_balancer_arn = aws_lb.this[0].arn
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
@@ -73,12 +81,14 @@ resource "aws_lb_listener" "https" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.bao.arn
+    target_group_arn = aws_lb_target_group.bao[0].arn
   }
 }
 
 resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.this.arn
+  count = var.running ? 1 : 0
+
+  load_balancer_arn = aws_lb.this[0].arn
   port              = 80
   protocol          = "HTTP"
 
@@ -93,10 +103,12 @@ resource "aws_lb_listener" "http" {
 }
 
 resource "cloudflare_dns_record" "bao" {
+  count = var.running ? 1 : 0
+
   zone_id = data.cloudflare_zone.this.zone_id
   name    = local.fqdn
   type    = "CNAME"
-  content = aws_lb.this.dns_name
+  content = aws_lb.this[0].dns_name
   ttl     = 300
   proxied = false
   comment = "OpenBao POC load balancer (terraform: ${var.name})"

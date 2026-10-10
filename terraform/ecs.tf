@@ -17,7 +17,7 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
   }
 }
 
-# Execution role: pull image, write logs, read the DB password secret.
+# Execution role: pull image, write logs, read the DB password parameter.
 resource "aws_iam_role" "execution" {
   name               = "${var.name}-execution"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
@@ -29,14 +29,14 @@ resource "aws_iam_role_policy_attachment" "execution" {
 }
 
 resource "aws_iam_role_policy" "execution_secret" {
-  name = "db-secret"
+  name = "db-password"
   role = aws_iam_role.execution.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue"]
-      Resource = aws_db_instance.this.master_user_secret[0].secret_arn
+      Action   = ["ssm:GetParameters"]
+      Resource = aws_ssm_parameter.db_password.arn
     }]
   })
 }
@@ -101,15 +101,15 @@ resource "aws_ecs_task_definition" "bao" {
     environment = [
       { name = "AWS_REGION", value = var.region },
       { name = "KMS_KEY_ID", value = aws_kms_key.unseal.key_id },
-      { name = "PG_HOST", value = aws_db_instance.this.address },
-      { name = "PG_USER", value = aws_db_instance.this.username },
-      { name = "PG_DB", value = aws_db_instance.this.db_name },
+      { name = "PG_HOST", value = aws_rds_cluster.this.endpoint },
+      { name = "PG_USER", value = aws_rds_cluster.this.master_username },
+      { name = "PG_DB", value = aws_rds_cluster.this.database_name },
       { name = "RDS_CA_B64", value = base64encode(data.http.rds_ca.response_body) },
       { name = "VPC_CIDR", value = data.aws_vpc.default.cidr_block },
     ]
 
     secrets = [
-      { name = "PGPASSWORD", valueFrom = "${aws_db_instance.this.master_user_secret[0].secret_arn}:password::" },
+      { name = "PGPASSWORD", valueFrom = aws_ssm_parameter.db_password.arn },
     ]
 
     logConfiguration = {
@@ -123,7 +123,10 @@ resource "aws_ecs_task_definition" "bao" {
   }])
 }
 
+# The service (and so the tasks) only exists while var.running is true.
 resource "aws_ecs_service" "bao" {
+  count = var.running ? 1 : 0
+
   name            = var.name
   cluster         = aws_ecs_cluster.this.id
   task_definition = aws_ecs_task_definition.bao.arn
@@ -144,7 +147,7 @@ resource "aws_ecs_service" "bao" {
   }
 
   load_balancer {
-    target_group_arn = aws_lb_target_group.bao.arn
+    target_group_arn = aws_lb_target_group.bao[0].arn
     container_name   = "openbao"
     container_port   = 8200
   }

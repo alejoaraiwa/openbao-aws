@@ -34,19 +34,21 @@ variable "node_count" {
   default     = 3
 }
 
+variable "running" {
+  description = "true = cluster up (tasks, load balancer, DNS). false = only free/near-free resources remain and the database pauses."
+  type        = bool
+  default     = false
+}
+
 variable "task_cpu" {
-  type    = number
-  default = 512
+  description = "Fargate CPU units per task (256 = 0.25 vCPU, the minimum)."
+  type        = number
+  default     = 256
 }
 
 variable "task_memory" {
   type    = number
-  default = 1024
-}
-
-variable "db_instance_class" {
-  type    = string
-  default = "db.t4g.micro"
+  default = 512
 }
 
 variable "allowed_cidrs" {
@@ -58,10 +60,11 @@ variable "allowed_cidrs" {
 variable "budget_limit_usd" {
   description = "Monthly budget; alerts at 50%/80% actual and 100% forecast."
   type        = number
-  default     = 100
+  default     = 10
 }
 
 variable "alert_email" {
-  description = "Email address for budget alerts."
+  description = "Email address for budget alerts; empty = no budget."
   type        = string
+  default     = ""
 }
