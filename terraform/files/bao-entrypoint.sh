@@ -13,7 +13,6 @@ echo "$RDS_CA_B64" | base64 -d > /tmp/rds-ca.pem
 
 cat > /tmp/bao.hcl <<HCL
 ui            = true
-disable_mlock = true
 cluster_name  = "openbao-poc"
 api_addr      = "http://${IP}:8200"
 cluster_addr  = "https://${IP}:8201"
