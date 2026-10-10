@@ -23,9 +23,11 @@ variable "hostname" {
 }
 
 variable "openbao_image" {
+  # Pinned to 2.6.x: from 2.7.0 the awskms seal is no longer built in (it is an
+  # external KMS plugin), and 2.7.1 fails with "unknown wrapper: awskms".
   description = "OpenBao container image."
   type        = string
-  default     = "quay.io/openbao/openbao:2.7.1"
+  default     = "quay.io/openbao/openbao:2.6.4"
 }
 
 variable "node_count" {
