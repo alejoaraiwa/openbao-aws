@@ -3,6 +3,8 @@
 3-node OpenBao cluster on ECS Fargate with a PostgreSQL (RDS) HA backend,
 KMS auto-unseal, published at https://bao.ubts.es (Cloudflare DNS).
 
+Architecture (POC + enterprise baseline): `docs/ARCHITECTURE.md`.
+
 Read `PLAN.md` first: it holds the design decisions, current status, and the
 runbook. Keep its **Status** section up to date as work progresses.
 
