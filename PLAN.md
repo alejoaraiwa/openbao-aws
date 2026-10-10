@@ -80,8 +80,7 @@ Debugging: logs are in CloudWatch `/ecs/openbao-poc`
 - [x] Upgraded to OpenBao 2.7.1 with the AWS KMS seal as an external plugin
       (`ghcr.io/openbao/openbao-plugin-kms-aws:v0.1.0`, pinned by digest, downloaded at
       every task start into `/tmp/plugins`). Rolling ECS deploy, one node at a time; data
-      kept. Aurora snapshot `openbao-poc-pre-2-7-upgrade` taken before (delete when no
-      longer needed). Failover on 2.7.1: 94 reads, 1 failed
+      kept. Aurora snapshot `openbao-poc-pre-2-7-upgrade` taken before (deleted 2026-10-10). Failover on 2.7.1: 94 reads, 1 failed
 - [ ] Cost Explorer: `claude-deployer` gets AccessDenied ("User not enabled for cost explorer
       access"); enable IAM access to billing in the account settings to check spend from here
 - [x] `scripts/down.sh`; `scripts/status.sh` shows nothing billed hourly (2026-10-10: ECS service,
