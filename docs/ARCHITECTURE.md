@@ -113,7 +113,7 @@ flowchart LR
 - With auto-unseal, `init` produces **recovery keys** (3 shares, threshold 2),
   not unseal keys. In the POC they are stored, together with the root token, in
   SSM Parameter Store (`/openbao-poc/init`, SecureString). That is acceptable
-  only for a POC; see §6.4.
+  only for a POC; see §7.4.
 
 ### 2.4 Network and ingress
 
@@ -151,7 +151,7 @@ flowchart LR
   `scripts/failover-test.sh` stops the active task while reading a secret
   through the ALB twice a second.
 
-## 3. Validated behaviour (2026-10-10)
+## 3. Validated behaviour (2026-10-10 and 2026-10-13)
 
 | Test | Result |
 |---|---|
@@ -161,10 +161,17 @@ flowchart LR
 | Rolling upgrade 2.6.4 → 2.7.1 with the KMS plugin | No downtime; data kept; all nodes `builtin: false` seal |
 | Failover on 2.7.1 | 94 reads, 1 failed (sub-second) |
 | Down → up | Data kept; already initialized; auto-unsealed |
+| Start after 2 days down | Aurora took ~80 s to resume; a node failed the 60 s grace period and was replaced. Fixed: 180 s |
+| 2.7 read-enabled standbys on Aurora | Failed until `rds.logical_replication = 1`; after a ~1 min writer reboot all standbys read-enabled, zero errors, read-after-write consistent |
 
 Lessons learned:
-- Pin image versions and read release notes. 2.7 removed built-in KMS seals,
-  and the upgrade path is the plugin.
+- Pin image versions and read release notes. 2.7 removed built-in KMS seals
+  (the upgrade path is the plugin) and added read-enabled standbys, which need
+  logical replication on Aurora.
+- Read the logs after every change, not just health checks: the 2.7 standby
+  errors left the cluster healthy but logged ~6 errors a second.
+- Scale-to-zero databases have cold starts of tens of seconds; health checks
+  and client timeouts must allow for it, or production must not pause.
 - During an election `/sys/leader` briefly reports no leader. Clients and
   scripts must retry.
 - In one test a freshly started replacement node won the lock instead of a
@@ -224,9 +231,108 @@ When the platform is Kubernetes (EKS) with a team that runs stateful workloads, 
 - What RPO and RTO does the business need?
 - Roughly how many clients and requests per second?
 
-## 6. Enterprise target: detailed recommendations
+## 6. Production design details
 
-### 6.1 Network
+### 6.1 Sizing for a large enterprise
+
+Writes and logins run on the active node and the single database writer; since
+2.7, reads are spread over the read-enabled standbys. Aurora readers are
+failover targets only, because OpenBao talks to the writer. Size one node and
+one writer for the write and login load, add nodes for read load, and keep
+identical spares.
+
+Load drivers, roughly in order: leases and tokens alive at once (each is a
+database row and costs memory on the active node); logins per second; dynamic
+secrets; KV reads (cheap, cached, served by standbys).
+
+| Profile | Load (rough) | OpenBao node (×3, one per AZ) | Aurora PostgreSQL |
+|---|---|---|---|
+| Medium | ≤ 1,000 clients, < 500 req/s, < 50k leases | 2 vCPU / 4–8 GB | Serverless v2, 2–8 ACU, writer + 1 reader |
+| Large enterprise | ~10k clients, 1–3k req/s, 100k–500k leases | 4 vCPU / 16 GB | db.r7g.xlarge writer + 1 reader in another AZ |
+| Very large | 50k+ clients, 5k+ req/s, ~1M leases | 8–16 vCPU / 32–64 GB (Fargate max 16 vCPU / 120 GB) | db.r7g.2xlarge–4xlarge + 2 readers |
+
+Starting points to confirm with a load test of the real call mix. Keep about
+50% headroom. Keep load down with short TTLs, batch tokens for high-volume
+machine logins, and OpenBao Agent or Proxy next to busy apps. Beyond one
+cluster, split by business unit, region or security zone.
+
+### 6.2 Database availability
+
+- Storage: 6 copies across 3 AZs; survives losing an AZ without data loss.
+- Compute: with a reader in another AZ, failover in about 30 s or less;
+  without one, about 10 minutes. The reader is mandatory.
+- AWS SLA for Multi-AZ Aurora: 99.99% a month (check the current SLA page).
+- OpenBao during a database failover: the active node steps down, clients get
+  errors for roughly the failover time and must retry, then a node retakes the
+  lock by itself (seen in the POC during the ~1 min writer reboot).
+- KMS is only needed at unseal: a KMS outage stops new nodes, not running ones.
+  Expected end to end: about 99.95–99.99% with client retries.
+
+| Risk beyond hardware | Mitigation |
+|---|---|
+| Engine upgrade or static parameter change restarts the writer | Maintenance window, zero-downtime patching, majors tested on a clone |
+| Connection exhaustion | Size `max_parallel` to the connection limit; alarm on connections |
+| Bad change or deleted data | Point-in-time restore; deletion protection |
+| Whole region down | Aurora Global Database + stack in the DR region (RPO ~1 s, RTO 15–30 min) |
+
+### 6.3 Internal load balancer and on-prem client IPs
+
+Internal load balancer only, reached over Direct Connect / VPN and a Transit
+Gateway, with a Route 53 private hosted zone forwarded from on-prem DNS.
+
+| | A. ALB + X-Forwarded-For | B. NLB TLS passthrough + Proxy Protocol v2 (recommended) |
+|---|---|---|
+| Where TLS ends | ALB, re-encrypted to the nodes | OpenBao nodes (end to end) |
+| Client IP | `X-Forwarded-For` trusted only from ALB subnets (`x_forwarded_for_authorized_addrs`, `x_forwarded_for_reject_not_present = true`) | PROXY header read with `proxy_protocol_behavior = "allow_authorized"`, `proxy_protocol_authorized_addrs` = NLB subnets |
+| `cert` auth | Not possible | Works |
+
+A proxy or NAT in front hides the client IP unless it forwards it. Test NLB
+health checks with Proxy Protocol in a lower environment.
+
+### 6.4 Backup and restore
+
+- Everything lives in Aurora: continuous backups with point-in-time restore
+  (14–35 days) and AWS Backup copies to a separate backup account and region
+  with Vault Lock. Backups are useless without the KMS key: never delete it;
+  keep a multi-Region copy.
+- Full restore: restore to a new Aurora cluster, point OpenBao at it, roll the
+  tasks; nodes unseal through KMS. Clients log in again; revoke dynamic
+  credentials issued after the restore point in the target systems.
+- Single secret: KV v2 versioning (undelete, roll back).
+- Restore into an isolated account every quarter and time it.
+
+### 6.5 KMS key in a security account
+
+Database copy + Decrypt on the key = every secret; disable/delete the key =
+OpenBao and all backups unrecoverable. A security account splits those powers:
+the security team owns the key policy, the task role gets only Encrypt /
+Decrypt / DescribeKey, CloudTrail for key use sits where workload admins cannot
+touch it, and SCPs can block key deletion. Cross-account use needs the key
+policy and the role's IAM policy, and the seal must use the full key ARN. A
+dedicated prod account with a tight key policy is an acceptable middle ground.
+
+### 6.6 On-prem recovery copy
+
+Aurora snapshots restore only in AWS, but `pg_dump` restores into any
+PostgreSQL 16+. The constraint is the seal (KMS keys cannot be exported). If
+surviving the total loss of AWS is required, refresh a standalone on-prem
+OpenBao nightly:
+
+1. `pg_dump` from an Aurora clone or reader, shipped on-prem.
+2. Restore into PostgreSQL, or convert to Raft with `bao operator migrate`.
+3. Seal migration from AWS KMS (`disabled = "true"`) to an on-prem HSM
+   (PKCS#11) or Shamir; the last time KMS is needed.
+4. Verify a known secret; keep it stopped or sealed. RPO = refresh interval.
+
+Conditions: no network path to target systems (it would revoke production's
+credentials or rotate root passwords); treat it as production (same keys, all
+secrets and tokens); a dedicated, host-bound KMS role (IAM Roles Anywhere) with
+CloudTrail alerts; prefer an HSM target (Shamir needs custodians at DR time);
+same OpenBao version or newer; plan the way back to AWS.
+
+## 7. Enterprise target: detailed recommendations
+
+### 7.1 Network
 - Dedicated VPC per environment (or shared VPC from a network account) with
   **private subnets** across 3 AZs. No public IPs on tasks.
 - VPC endpoints for ECR (api + dkr), S3, KMS, SSM/Secrets Manager, CloudWatch
@@ -235,14 +341,14 @@ When the platform is Kubernetes (EKS) with a team that runs stateful workloads, 
   If external access is required, put it behind WAF and an allowlist or mTLS.
   Private DNS (Route 53 private hosted zone) for the internal name.
 
-### 6.2 TLS end to end
+### 7.2 TLS end to end
 - Enable TLS on the OpenBao listener (8200) with certificates from a private CA
   (AWS Private CA or OpenBao's own PKI bootstrapped once). Use an
   HTTPS target group, or an NLB with TLS passthrough so clients can use client
   certificates and `cert` auth.
 - Advertise `https://` `api_addr`. TLS 1.2+ only.
 
-### 6.3 Storage backend decision
+### 7.3 Storage backend decision
 Two viable options; pick one explicitly:
 
 | | PostgreSQL (as POC) | Integrated storage (Raft) |
@@ -262,7 +368,7 @@ For a Fargate-based platform, keep **PostgreSQL** with:
 - IAM database authentication or a Secrets Manager-managed password with
   rotation, instead of a static password.
 
-### 6.4 Seal and key management
+### 7.4 Seal and key management
 - Customer-managed KMS key in a dedicated security account, key policy limited
   to the task role. Consider a **multi-Region key** to support DR.
 - At `init`, encrypt the recovery keys with **PGP keys of named custodians**
@@ -270,7 +376,7 @@ For a Fargate-based platform, keep **PostgreSQL** with:
 - **Revoke the initial root token** once SSO and an admin policy exist.
   Generate a new one only through the recovery-key quorum when needed.
 
-### 6.5 Supply chain
+### 7.5 Supply chain
 - Mirror the OpenBao image and the KMS plugin into **private ECR** with
   scanning and immutable tags. Pin by digest.
 - Better: build an image that bakes in the plugin binary (verified
@@ -278,7 +384,7 @@ For a Fargate-based platform, keep **PostgreSQL** with:
 - Track OpenBao releases. Test upgrades in a lower environment, and take a DB
   snapshot before each one, as in this POC.
 
-### 6.6 Identity and access
+### 7.6 Identity and access
 - Human access through **OIDC/SSO** (corporate IdP) mapped to OpenBao
   policies and groups.
 - Workloads use the **AWS IAM auth method** (ECS/EKS/Lambda roles),
@@ -286,7 +392,7 @@ For a Fargate-based platform, keep **PostgreSQL** with:
 - Least-privilege policies managed as code (Terraform `vault` provider or
   OpenBao config pipeline). Namespaces per tenant/team if multi-tenant.
 
-### 6.7 Audit, monitoring, alerting
+### 7.7 Audit, monitoring, alerting
 - At least two **audit devices** (file to stdout → CloudWatch, plus socket or a
   second file), so a failed audit device does not block requests. Ship them to
   the SIEM.
@@ -295,14 +401,14 @@ For a Fargate-based platform, keep **PostgreSQL** with:
   ECS task restarts, ALB 5xx and unhealthy targets.
 - Log retention aligned with the compliance policy (often ≥ 1 year for audit).
 
-### 6.8 Availability and DR
+### 7.8 Availability and DR
 - 3 nodes across 3 AZs (as POC), sized from load tests. 0.25 vCPU is too small
   for production; start around 1 vCPU / 2 GB.
 - Define RPO/RTO. Cross-region DR: Aurora Global Database or cross-region
   snapshot copy, multi-Region KMS key, and a standby ECS service (desired 0) in
   the DR region, plus a DNS failover runbook. Test it periodically.
 
-### 6.9 Delivery and governance
+### 7.9 Delivery and governance
 - Separate AWS accounts per environment (dev / staging / prod) under AWS
   Organizations with SCPs.
 - Terraform through a CI/CD pipeline (plan on PR, apply on merge) with a
@@ -310,9 +416,9 @@ For a Fargate-based platform, keep **PostgreSQL** with:
 - Tagging, budgets and cost allocation per environment. Always on (no
   `running` switch) in production.
 
-## 7. From POC to enterprise: suggested steps
+## 8. From POC to enterprise: suggested steps
 
-1. Decide the storage backend (§6.3) and the network model (§6.1). These
+1. Decide the storage backend (§7.3) and the network model (§7.1). These
    drive everything else.
 2. Build the landing zone: accounts, VPC, endpoints, private DNS, ECR
    mirror.
