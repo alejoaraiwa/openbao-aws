@@ -17,6 +17,11 @@ OpenBao DEV cluster** and **S3 bucket(s) with OpenBao snapshots**. This project:
   everything, never imports existing resources, and gates every apply with
   `scripts/plan-guard.sh` (refuses updates/deletes unless approved by name).
 
+**Nothing is public.** Internal NLB only, private subnets, no public IPs,
+ingress only from agreed corporate CIDRs, Block Public Access on any bucket, no
+`"Principal": "*"` policies. Any exception needs an explicit request, a warning
+and a confirmation; `scripts/plan-guard.sh` refuses public exposure otherwise.
+
 `scripts/discover.sh` lists the existing resources first; the agreed plan
 (`docs/DEV-PLAN.md`) names them in a "will never be touched" section.
 

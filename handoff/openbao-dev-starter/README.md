@@ -15,7 +15,7 @@ instead of from scratch.
 | `docs/DEV-TARGET.md` | Proposed DEV design (end-to-end TLS, internal NLB, private subnets) with open questions |
 | `docs/POC-ARCHITECTURE.md` | POC architecture plus production and enterprise recommendations |
 | `scripts/discover.sh` | Read-only inventory of the AWS account (KMS keys, S3 buckets, network, DNS, ECS, RDS, secret *names*) to `docs/ACCOUNT-INVENTORY.md` |
-| `scripts/plan-guard.sh` | Terraform plan gate: lists creations, refuses updates/deletes/imports unless allowed by name |
+| `scripts/plan-guard.sh` | Terraform plan gate: lists creations; refuses updates/deletes/imports (`ALLOW_CHANGES`) and any possible public exposure (`ALLOW_PUBLIC`, only after a warning and your confirmation) unless allowed by name |
 | `reference/` | The POC's Terraform and scripts, for reference only (not deployable as is) |
 
 ## How to use
@@ -38,7 +38,8 @@ instead of from scratch.
 
 The account is shared with the on-prem OpenBao (its unseal KMS key and
 snapshot bucket). The instructions forbid touching anything this project did
-not create; `scripts/plan-guard.sh` enforces it on every Terraform plan.
+not create, and making anything public without your explicit confirmation;
+`scripts/plan-guard.sh` enforces both on every Terraform plan.
 
 Requirements in WSL: `aws` CLI v2, `terraform` ≥ 1.10, `jq`, and
 `docker`/`buildx` (or a CI pipeline) to build the image.

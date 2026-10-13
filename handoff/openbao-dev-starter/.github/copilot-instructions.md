@@ -22,8 +22,8 @@ in this repo:
   code. **Reference only, never deploy it as is** (public ALB, public subnets;
   `alb.tf` is not included, so it does not plan on its own).
 - `scripts/discover.sh`: read-only account inventory.
-- `scripts/plan-guard.sh`: Terraform plan gate that refuses updates, deletes
-  and imports unless explicitly allowed.
+- `scripts/plan-guard.sh`: Terraform plan gate that refuses updates, deletes,
+  imports and public exposure unless explicitly allowed.
 
 ## This account is shared: protected resources
 
@@ -56,7 +56,33 @@ Rules:
    `data` sources only when the plan says so (for example the VPC and subnets).
 7. Every apply goes through `scripts/plan-guard.sh`: the plan must contain only
    creations, or updates/deletes of this project's own resources that I
-   approved by name (`ALLOW_CHANGES`).
+   approved by name (`ALLOW_CHANGES`), and no public exposure unless confirmed
+   (`ALLOW_PUBLIC`, see below).
+
+## Nothing public, unless I explicitly ask for it
+
+**Nothing may be made reachable from the internet or by anyone outside the
+company**, unless I explicitly ask for it, you have **warned me** what exactly
+becomes public and the risks, and I have **confirmed** in the chat. This
+includes, at least:
+
+- internet-facing load balancers (`internal = false`), public IPs on tasks,
+  instances or subnets, Elastic IPs, internet gateways;
+- security group ingress from `0.0.0.0/0` or `::/0` (egress is fine);
+- publicly accessible databases;
+- S3 buckets without full Block Public Access, public ACLs, or bucket policies
+  with `"Principal": "*"`; KMS, ECR, Secrets Manager, SNS/SQS policies with
+  `"Principal": "*"` (unless restricted by conditions you explain);
+- public Route 53 hosted zones or public DNS records for this service;
+- CloudFront, API Gateway, Lambda URLs without auth, Global Accelerator;
+- account-wide public-access settings.
+
+Defaults are always private: internal NLB, private subnets, no public IPs,
+ingress only from the agreed corporate CIDRs, Block Public Access on any
+bucket. `scripts/plan-guard.sh` refuses any plan with possible public exposure
+(exit code 3); only after my confirmation may you re-run it with
+`ALLOW_PUBLIC="<resource address> ..."` naming exactly the confirmed resources.
+Never set `ALLOW_PUBLIC` on your own.
 
 ## How to work: everything through the API, nothing in the console
 

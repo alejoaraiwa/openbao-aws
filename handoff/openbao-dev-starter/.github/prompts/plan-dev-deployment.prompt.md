@@ -8,8 +8,10 @@ everything through the AWS CLI and Terraform; I will not click in the console.
 
 **The account is shared.** It already holds the KMS key that unseals our
 on-prem OpenShift OpenBao DEV cluster and S3 bucket(s) with OpenBao snapshots.
-Nothing we do may modify, reuse or delete them. Follow the rules in
-`.github/copilot-instructions.md` strictly.
+Nothing we do may modify, reuse or delete them. **Nothing may be made public**
+(internet-facing, `0.0.0.0/0` ingress, public IPs, public buckets or
+policies) unless I explicitly ask, you warn me, and I confirm. Follow the
+rules in `.github/copilot-instructions.md` strictly.
 
 ## Step 1: learn what was proven (no AWS calls yet)
 
@@ -63,6 +65,9 @@ Write `docs/DEV-PLAN.md`:
 2. **Will be created**: every resource with its name.
 3. **Will only be read**: existing resources referenced via `data` sources.
 4. **Will never be touched**: the protected list from step 2.
+   Also state explicitly that nothing is public: every network entry point,
+   who can reach it (CIDRs / security groups), and that the plan contains no
+   public exposure.
 5. Monthly cost estimate.
 6. Rollout steps (below) with a rollback for each, and how to remove
    everything this project created without touching anything else.
