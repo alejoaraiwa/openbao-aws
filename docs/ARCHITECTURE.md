@@ -69,16 +69,22 @@ flowchart LR
 
 ### 2.2 Storage and HA: PostgreSQL backend
 
+- Aurora uses a custom cluster parameter group with `rds.logical_replication = 1`.
+  OpenBao 2.7 read-enabled standbys need the WAL LSN to track cache invalidations,
+  and Aurora only exposes it with logical replication on (static parameter: writer reboot).
+
 - All nodes share one Aurora PostgreSQL database. OpenBao creates its tables
   itself (`openbao_kv_store` plus the HA lock table).
 - HA is a lock row in PostgreSQL. Whoever holds the lock is active. Standbys
-  forward client requests to the active node over the cluster port (8201,
+  serve reads themselves (OpenBao 2.7 read-enabled standbys) and forward writes
+  to the active node over the cluster port (8201,
   always mutual TLS).
 - **There is no quorum.** Unlike Raft storage, the nodes hold no data. One
   surviving node is enough to serve. Availability and durability are delegated
   entirely to the database.
 - Connection: `sslmode=verify-full` against the regional RDS CA bundle.
-  `max_connect_retries = 0` makes OpenBao retry forever. This covers the ~15 s
+  `max_connect_retries = 0` makes OpenBao retry forever. This covers the Aurora resume after a pause (measured up to ~80 s; the ECS
+  health-check grace period is 180 s for that reason). Previously documented as ~15 s:
   Aurora resume after a pause.
 - Aurora Serverless v2 with `min_capacity = 0`: the database pauses after
   5 minutes without connections. That is a cost choice for the POC, not an
@@ -198,7 +204,7 @@ The main reason is operations. The nodes hold no data, so a node is just a conta
 
 | Area | What to expect | What to do |
 | --- | --- | --- |
-| Scalability | OpenBao processes every request on the active node; standbys only forward. More nodes add availability, not throughput, and that is true with Raft as well, so scale up, not out. Fargate goes to 16 vCPU / 120 GB per task. The database is a single writer, which suits read-heavy secrets traffic, and OpenBao caches in memory. | Load test with the real mix (logins, KV reads, dynamic secrets), size from that, and track the active node's CPU and latency. If one node is ever outgrown, split into separate clusters per domain or tenant. |
+| Scalability | Since 2.7, standbys serve **reads** themselves (read-enabled standbys) and forward only writes to the active node. Read capacity therefore grows with node count; write capacity is one node plus one database writer, so scale writes up, not out. On Aurora this requires `rds.logical_replication = 1` (OpenBao tracks the WAL LSN to invalidate standby caches); without it standbys log `wal_level must be set to 'logical'` non-stop. Fargate goes to 16 vCPU / 120 GB per task. | Load test with the real mix (logins, KV reads, dynamic secrets): reads scale with standbys, logins and writes do not. Track the active node's CPU and latency. If writes ever outgrow one node, split into separate clusters per domain or tenant. |
 | Performance | Each request goes client → load balancer → node (→ active node) → Aurora, inside one region: a few milliseconds of overhead. Cache misses and writes cost a database round trip. Logins and dynamic secrets are the heavier calls, not KV reads. | No database auto-pause (the POC's ~15 s resume is unacceptable). Keep the database in the same AZs. Use client-side token reuse and caching (OpenBao Agent or Proxy) for chatty apps. |
 | Availability | One AZ down: the remaining nodes take over in seconds (measured: 1 failed request out of 94). Database failover: Aurora promotes the reader in about 30 s or less, and OpenBao reconnects by itself. Expected availability is roughly that of Aurora Multi-AZ, 99.95–99.99%. | Writer plus reader is mandatory. Health checks and alarms on leadership changes and sealed nodes. Rolling upgrades one node at a time (proven in the POC). Clients retry. |
 | Operations overhead | Low. No servers or OS patching, no disks, no quorum repair. Upgrades are a Terraform change and a rolling deploy, tested on a copy first. Remaining work is OpenBao itself (policies, auth methods, audit, upgrades) plus normal Aurora care such as minor version upgrades in a maintenance window. | Everything as code through CI/CD. Runbooks for unseal and recovery, generating a root token, database restore and region failover. Roughly part of one engineer's time, versus noticeably more for self-run Raft clusters. |

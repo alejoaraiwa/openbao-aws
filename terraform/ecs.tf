@@ -135,7 +135,7 @@ resource "aws_ecs_service" "bao" {
   launch_type     = "FARGATE"
 
   enable_execute_command            = true
-  health_check_grace_period_seconds = 60
+  health_check_grace_period_seconds = 180
 
   # Replace nodes one at a time during deploys so there is always an active node.
   deployment_minimum_healthy_percent = 66

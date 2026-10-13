@@ -24,6 +24,21 @@ resource "aws_ssm_parameter" "db_password" {
   value = random_password.db.result
 }
 
+# OpenBao 2.7 read-enabled standbys track the WAL LSN (pg_current_wal_lsn) to
+# invalidate their caches. Aurora only exposes it with logical replication on;
+# without it standbys log "wal_level must be set to 'logical'" non-stop.
+# Static parameter: takes effect after the writer instance reboots.
+resource "aws_rds_cluster_parameter_group" "this" {
+  name   = var.name
+  family = data.aws_rds_engine_version.aurora_pg.parameter_group_family
+
+  parameter {
+    name         = "rds.logical_replication"
+    value        = "1"
+    apply_method = "pending-reboot"
+  }
+}
+
 resource "aws_rds_cluster" "this" {
   cluster_identifier = var.name
   engine             = data.aws_rds_engine_version.aurora_pg.engine
@@ -34,9 +49,10 @@ resource "aws_rds_cluster" "this" {
   master_username = "openbao"
   master_password = random_password.db.result
 
-  db_subnet_group_name   = aws_db_subnet_group.this.name
-  vpc_security_group_ids = [aws_security_group.db.id]
-  storage_encrypted      = true
+  db_subnet_group_name            = aws_db_subnet_group.this.name
+  db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.this.name
+  vpc_security_group_ids          = [aws_security_group.db.id]
+  storage_encrypted               = true
 
   serverlessv2_scaling_configuration {
     min_capacity             = 0

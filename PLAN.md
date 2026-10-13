@@ -36,7 +36,8 @@ Notes:
 - Each task builds its config at start (`terraform/files/bao-entrypoint.sh`)
   from its own IP, read from ECS task metadata (`api_addr`, `cluster_addr`).
 - Postgres TLS uses `sslmode=verify-full` with the regional RDS CA bundle.
-- The first connection after a pause waits ~15s for Aurora to resume;
+- The first connection after a pause waits for Aurora to resume (measured up to ~80s;
+  ECS health-check grace period is 180s);
   `max_connect_retries = 0` makes OpenBao retry until it is up.
 
 ## Credentials
@@ -87,3 +88,8 @@ Debugging: logs are in CloudWatch `/ecs/openbao-poc`
       ALB and DNS record removed; Aurora paused at 0 ACU)
 - [x] Architecture + production recommendation documented: `docs/ARCHITECTURE.md`
       (also shared as a Claude Doc)
+- [x] 2026-10-13: fixed OpenBao 2.7 standby errors (`wal_level must be set to 'logical'`,
+      ~6/s): Aurora cluster parameter group with `rds.logical_replication = 1` + writer
+      reboot. Standbys now run in read-enabled mode; read-after-write through the ALB OK.
+      ECS health-check grace 60s -> 180s (Aurora resume took ~80s and a task was replaced)
+- [ ] Verify Aurora still auto-pauses to 0 ACU with logical replication on (next `down.sh`)
