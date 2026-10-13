@@ -13,6 +13,14 @@ Nothing we do may modify, reuse or delete them. **Nothing may be made public**
 policies) unless I explicitly ask, you warn me, and I confirm. Follow the
 rules in `.github/copilot-instructions.md` strictly.
 
+## Step 0: prerequisites
+
+Check (read-only) that `aws` v2, `terraform` ≥ 1.10, `jq` and `docker buildx`
+are available and that an AWS SSO profile works
+(`aws sts get-caller-identity --profile <profile>`). If anything is missing,
+follow `GETTING-STARTED.md` steps 3–4: propose the commands, and run each only
+after my approval.
+
 ## Step 1: learn what was proven (no AWS calls yet)
 
 Read fully: `.github/copilot-instructions.md`, `docs/LEARNINGS.md`,

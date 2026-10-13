@@ -9,6 +9,7 @@ instead of from scratch.
 
 | Path | What it is |
 |---|---|
+| `GETTING-STARTED.md` | Setup checklist for the work machine; Copilot can follow it from step 3 |
 | `.github/copilot-instructions.md` | Picked up automatically by Copilot Chat in VS Code: project context and working rules |
 | `.github/prompts/plan-dev-deployment.prompt.md` | Kickoff prompt: run it in Copilot Chat with `/plan-dev-deployment` |
 | `docs/LEARNINGS.md` | Verified facts and pitfalls from the POC |
@@ -19,6 +20,9 @@ instead of from scratch.
 | `reference/` | The POC's Terraform and scripts, for reference only (not deployable as is) |
 
 ## How to use
+
+**Step-by-step setup for a work machine (WSL, tools, AWS SSO): see
+[`GETTING-STARTED.md`](GETTING-STARTED.md).** Short version:
 
 1. Create a new, empty repository for the DEV deployment (company GitHub /
    GitLab) and clone it in WSL.
