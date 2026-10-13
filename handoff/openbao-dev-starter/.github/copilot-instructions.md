@@ -17,40 +17,82 @@ in this repo:
 - `docs/DEV-TARGET.md`: the proposed DEV design, with open questions marked
   **[ASK]** and the acceptance tests.
 - `docs/POC-ARCHITECTURE.md`: the POC architecture plus production and
-  enterprise recommendations (sizing, availability, backup/restore, KMS
-  account, client IPs, on-prem recovery copy).
+  enterprise recommendations.
 - `reference/poc-terraform/` and `reference/poc-scripts/`: the POC's working
-  code. **Reference only, never deploy it as is**: it used a public ALB,
-  public subnets and public IPs on tasks, and its `alb.tf` (public ALB + DNS)
-  is not included, so it does not plan on its own. Reuse its proven pieces:
-  the entrypoint that builds the config from the task IP, the Aurora parameter
-  group, the IAM roles, the init and failover scripts.
+  code. **Reference only, never deploy it as is** (public ALB, public subnets;
+  `alb.tf` is not included, so it does not plan on its own).
+- `scripts/discover.sh`: read-only account inventory.
+- `scripts/plan-guard.sh`: Terraform plan gate that refuses updates, deletes
+  and imports unless explicitly allowed.
 
-## How to work
+## This account is shared: protected resources
 
-- **Ask before you assume** anything about the company environment: account,
-  region, VPC and subnets, egress, DNS, certificate authority, naming, tagging,
-  state backend, CI. `docs/DEV-TARGET.md` lists the open questions.
-- Propose a plan and the file layout before writing code. Work in small steps
-  and stop for review after each one.
-- New code goes in `terraform/`, `scripts/`, `image/` (Dockerfile) and
-  `docs/`. Do not edit `reference/`.
-- Terraform: run `terraform fmt` and `terraform validate`, then show
-  `terraform plan`. **Never run `terraform apply` or `destroy`, or any AWS
-  command that creates, changes or deletes resources, without my explicit
-  confirmation in the chat.** Read-only AWS commands are fine.
-- Use the AWS profile / SSO session I give you; never ask for or write access
-  keys into files.
+The DEV account **already runs things this project must not disturb**:
+
+- **An AWS KMS key that unseals the on-prem OpenShift OpenBao DEV cluster.**
+  If it is disabled, deleted, its key policy changed, or its grants removed,
+  that cluster cannot unseal after a restart.
+- **S3 bucket(s) holding OpenBao snapshots** uploaded from on-prem.
+
+Rules:
+
+1. **Never modify, re-use, tag, import or delete any resource this project did
+   not create.** In particular: no changes to existing KMS keys (policy,
+   grants, aliases, rotation, state), existing S3 buckets (policy, lifecycle,
+   versioning, encryption, objects), existing IAM roles/users/policies,
+   existing VPC route tables, security groups, DNS zones' existing records.
+2. Create **new, dedicated** resources: a new KMS key for this cluster's
+   unseal (never the on-prem key), new security groups, new IAM roles, and a
+   new S3 bucket only if one is really needed (Aurora backups need none).
+3. Prefix every resource name with the agreed project prefix (for example
+   `openbao-ecs-dev-`) and tag everything (`Project`, `Owner`, `Environment`,
+   `ManagedBy=terraform`) so it can never be confused with existing resources.
+4. IAM policies for this project reference **only this project's ARNs**: never
+   `kms:*` on `*`, never the on-prem key ARN, never the snapshot bucket ARN.
+5. No account-wide settings (S3 account public access block, EBS default
+   encryption, default VPC, CloudTrail, Config, GuardDuty, IAM password policy)
+   without explicit approval.
+6. Terraform must not `import` existing resources. Read existing ones with
+   `data` sources only when the plan says so (for example the VPC and subnets).
+7. Every apply goes through `scripts/plan-guard.sh`: the plan must contain only
+   creations, or updates/deletes of this project's own resources that I
+   approved by name (`ALLOW_CHANGES`).
+
+## How to work: everything through the API, nothing in the console
+
+All work is done from the terminal with the **AWS CLI and Terraform**: no
+console clicking, by you or by me. The workflow has four gates; never skip
+ahead:
+
+1. **Discover (read-only).** Run `scripts/discover.sh` (or equivalent
+   describe/list/get calls) and summarise what already runs in the account,
+   explicitly listing the protected resources. Never read secret values,
+   object contents, or call decrypt/sign APIs.
+2. **Tell me what you need.** One numbered list: decisions (the **[ASK]**
+   items of `docs/DEV-TARGET.md`), information, and the **IAM permissions**
+   the deploying identity needs. Wait for my answers.
+3. **Agree a written plan.** Write `docs/DEV-PLAN.md`: what will be created
+   (resource by resource, with names), what will only be read, what will never
+   be touched (protected list), costs per month, rollout steps, rollback,
+   acceptance tests. **Do not create anything until I reply "plan approved".**
+4. **Roll out step by step.** One step at a time: show the diff, run
+   `terraform fmt`, `validate`, then `scripts/plan-guard.sh`; explain the plan
+   and its cost; wait for my "apply" for that step.
+
+Further rules:
+
+- Read-only AWS commands (describe, list, get) are fine at any time. Any
+  command that creates, changes or deletes something needs my explicit OK, and
+  should go through Terraform unless there is no Terraform resource for it.
+- Use the AWS profile / SSO session I give you (`AWS_PROFILE`); never ask for
+  or write access keys into files.
 - **Never print, log or commit secrets**: OpenBao root token, recovery keys,
-  database passwords, TLS private keys, unseal or init output.
-- Pin versions: OpenBao image and KMS plugin by digest, Terraform providers in
+  database passwords, TLS private keys, init output.
+- Pin versions: OpenBao image and KMS plugin by digest, providers in
   `.terraform.lock.hcl`.
 - After every deployment change, check the OpenBao logs in CloudWatch for
-  `[ERROR]` and `[WARN]` lines, not just health checks
-  (`docs/LEARNINGS.md` item 17).
-- Keep costs visible: say what a change adds per month before applying it.
-- Keep `docs/STATUS.md` (create it) up to date: what is done, what is next,
-  decisions taken and why.
+  `[ERROR]` and `[WARN]` lines, not just health checks (LEARNINGS item 17).
+- Keep `docs/STATUS.md` up to date: done, next, decisions and why.
 
 ## Key technical constraints (details in docs/LEARNINGS.md)
 

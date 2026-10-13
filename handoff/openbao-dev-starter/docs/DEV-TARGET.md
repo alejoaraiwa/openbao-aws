@@ -4,6 +4,22 @@ Starting point for the DEV deployment in the company AWS account. Everything
 marked **[ASK]** must be confirmed before writing Terraform; company standards
 win over this document.
 
+## Coexistence with what already runs in the account
+
+The DEV account already holds the **KMS key that unseals the on-prem OpenShift
+OpenBao DEV cluster** and **S3 bucket(s) with OpenBao snapshots**. This project:
+
+- creates its **own** KMS key for the ECS cluster's unseal. Sharing the on-prem
+  key would tie two clusters' fate to one key policy and make a mistake in this
+  project able to break on-prem unseal;
+- does not use the snapshot bucket (Aurora backups need no S3 bucket);
+- scopes every IAM policy to its own ARNs, prefixes every name, tags
+  everything, never imports existing resources, and gates every apply with
+  `scripts/plan-guard.sh` (refuses updates/deletes unless approved by name).
+
+`scripts/discover.sh` lists the existing resources first; the agreed plan
+(`docs/DEV-PLAN.md`) names them in a "will never be touched" section.
+
 ## Shape
 
 ```
@@ -36,10 +52,10 @@ Aurora PostgreSQL 16        KMS key (unseal)      ECR (custom image with
 | ECS | Rolling deploy min 66% / max 134%, health-check grace 180 s, ECS Exec on | See LEARNINGS 8, 15 |
 | Image | Custom image in ECR: OpenBao 2.7.x + KMS plugin binary, pinned by digest | No runtime download from ghcr.io (see below) |
 | Database | Aurora PostgreSQL 16 Serverless v2, min 0.5 / max 4 ACU, writer (+ optional reader in another AZ), **custom cluster parameter group with `rds.logical_replication = 1`**, 7-day backups, encrypted with a CMK, deletion protection **[ASK]** | No auto-pause (logical replication prevents it anyway) |
-| Seal | KMS CMK in the DEV account (or a security account **[ASK]**), key policy limited to the task role (Encrypt, Decrypt, DescribeKey) | Use the full key ARN if cross-account |
+| Seal | **New** KMS CMK for this cluster in the DEV account (or a security account **[ASK]**), key policy limited to the task role (Encrypt, Decrypt, DescribeKey). Never the on-prem unseal key | Use the full key ARN if cross-account |
 | Secrets | DB password: Secrets Manager or SSM SecureString **[ASK]**. Init output: recovery keys PGP-encrypted to named people if possible, otherwise SSM SecureString with a restricted KMS key | Never print root token or recovery keys |
 | Audit | Enable a `file` audit device writing to `stdout` (goes to CloudWatch) right after init | Ship to the SIEM if required **[ASK]** |
-| IaC | Terraform, remote state per company standard **[ASK]**, tags per company standard **[ASK]** | Plan in CI if available |
+| IaC | Terraform, remote state per company standard **[ASK]** (a new state bucket/key, never the snapshot bucket), name prefix and tags per company standard **[ASK]** | Every apply through `scripts/plan-guard.sh`; everything via CLI/Terraform, no console |
 
 ## Custom image (plugin baked in)
 
