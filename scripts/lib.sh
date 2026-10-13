@@ -24,3 +24,8 @@ tf_apply_running() {
   local running="$1"; shift
   terraform -chdir="$TF_DIR" apply -input=false -auto-approve -var "running=$running" "$@"
 }
+
+db_status() {
+  aws rds describe-db-clusters --db-cluster-identifier "$NAME" \
+    --query 'DBClusters[0].Status' --output text 2>/dev/null || echo none
+}

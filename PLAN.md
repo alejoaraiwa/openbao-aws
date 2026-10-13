@@ -15,12 +15,12 @@ Run `scripts/down.sh` at the end of every working session.
 | Topic | Choice | Why |
 |---|---|---|
 | Compute | ECS on Fargate, 3 tasks across 3 AZs, ARM64, 0.25 vCPU / 0.5 GB (the minimum size) | No servers; cheapest Fargate size |
-| Storage | Aurora PostgreSQL Serverless v2, **min 0 ACU** (scale-to-zero), max 1 ACU | Pauses itself 5 min after the last connection, so it costs nothing while down except storage |
+| Storage | Aurora PostgreSQL Serverless v2, min 0 ACU, max 1 ACU, logical replication on | Logical replication (needed by 2.7 read-enabled standbys) blocks auto-pause, so `down.sh` **stops** the cluster and `up.sh` starts it; while stopped only storage is billed |
 | HA | OpenBao PostgreSQL backend with `ha_enabled` (lock in Postgres) | One active node; standbys forward requests to it over :8201 |
 | Unseal | AWS KMS auto-unseal | Restarted nodes unseal themselves |
 | Network | Default VPC, public subnets, tasks get public IPs (egress only) | No NAT gateway; SGs only let the ALB and the other nodes reach the tasks |
 | TLS / DNS | ALB + ACM cert for `bao.ubts.es`; Cloudflare DNS (DNS-only, not proxied) | Free cert. The ALB and DNS record exist only while up |
-| On/off | Terraform variable `running` (default `false`); `scripts/up.sh` / `scripts/down.sh` | Down removes the ECS service, the ALB and the DNS record; Aurora then pauses |
+| On/off | Terraform variable `running` (default `false`); `scripts/up.sh` / `scripts/down.sh` | Down removes the ECS service, the ALB and the DNS record, then stops Aurora (AWS restarts a stopped cluster after 7 days: re-run `down.sh`) |
 | Secrets | DB password and init output (recovery keys, root token) in **SSM Parameter Store** SecureString | Free, unlike Secrets Manager. For production keep the init output offline |
 | State | S3 bucket `openbao-poc-tfstate-<account>` with S3 native locking | Survives the ephemeral session container |
 | Cost guard | AWS Budget, $10/month, when `alert_email` is set | Email alerts at 50%/80% actual and 100% forecast |
@@ -92,4 +92,5 @@ Debugging: logs are in CloudWatch `/ecs/openbao-poc`
       ~6/s): Aurora cluster parameter group with `rds.logical_replication = 1` + writer
       reboot. Standbys now run in read-enabled mode; read-after-write through the ALB OK.
       ECS health-check grace 60s -> 180s (Aurora resume took ~80s and a task was replaced)
-- [ ] Verify Aurora still auto-pauses to 0 ACU with logical replication on (next `down.sh`)
+- [x] Aurora does NOT auto-pause with logical replication on (stayed at 0.5 ACU, ~$50/month;
+      AWS documents this). `down.sh` now stops the cluster, `up.sh` starts it (+ a few minutes)

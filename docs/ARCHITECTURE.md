@@ -146,7 +146,9 @@ flowchart LR
 ### 2.6 Operations model
 
 - `running` Terraform variable plus `scripts/up.sh` / `scripts/down.sh`. Down
-  removes the ECS service, the ALB and the DNS record; Aurora then pauses.
+  removes the ECS service, the ALB and the DNS record, then stops the Aurora
+  cluster: with logical replication on, Aurora Serverless v2 never auto-pauses
+  (AWS-documented). AWS restarts a stopped cluster after 7 days.
 - `scripts/init-openbao.sh` initializes once and checks health.
   `scripts/failover-test.sh` stops the active task while reading a secret
   through the ALB twice a second.
@@ -163,6 +165,7 @@ flowchart LR
 | Down → up | Data kept; already initialized; auto-unsealed |
 | Start after 2 days down | Aurora took ~80 s to resume; a node failed the 60 s grace period and was replaced. Fixed: 180 s |
 | 2.7 read-enabled standbys on Aurora | Failed until `rds.logical_replication = 1`; after a ~1 min writer reboot all standbys read-enabled, zero errors, read-after-write consistent |
+| Auto-pause with logical replication on | Does not pause (0.5 ACU after 20 min idle). `down.sh` now stops the cluster instead |
 
 Lessons learned:
 - Pin image versions and read release notes. 2.7 removed built-in KMS seals
